@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Product, StoreSettings } from './types';
-import { INITIAL_PRODUCTS, INITIAL_SETTINGS } from './data/initialData';
+import { INITIAL_SETTINGS } from './data/initialData';
 import { Header } from './components/Header';
 import { CategoryFilter } from './components/CategoryFilter';
 import { ProductCard } from './components/ProductCard';
@@ -17,7 +17,7 @@ export function App() {
 
   // Products List State (starts empty, synced exclusively from Server/Database)
   const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+
 
   // Admin POV State
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
@@ -66,10 +66,9 @@ export function App() {
       }
     } catch (err) {
       console.warn('Backend server connection failed:', err);
-    } finally {
-      setIsLoading(false);
     }
   };
+
 
   // Initial load & real-time polling (polls every 3 seconds so all devices stay updated)
   useEffect(() => {
