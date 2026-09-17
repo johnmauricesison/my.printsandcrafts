@@ -9,22 +9,15 @@ import { AdminModal } from './components/AdminModal';
 import { Heart, Key, Trash2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-const PRODUCTS_STORAGE_KEY = 'my_prints_crafts_products_v1';
-const SETTINGS_STORAGE_KEY = 'my_prints_crafts_settings_v1';
 const ADMIN_STORAGE_KEY = 'my_prints_crafts_admin_active';
 
 export function App() {
-  // Store Settings State
-  const [settings, setSettings] = useState<StoreSettings>(() => {
-    const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_SETTINGS;
-  });
+  // Store Settings State (starts with defaults, synced from Server/Database)
+  const [settings, setSettings] = useState<StoreSettings>(INITIAL_SETTINGS);
 
-  // Products List State
-  const [products, setProducts] = useState<Product[]>(() => {
-    const saved = localStorage.getItem(PRODUCTS_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
-  });
+  // Products List State (starts empty, synced exclusively from Server/Database)
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Admin POV State
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
@@ -44,48 +37,55 @@ export function App() {
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Fetch initial data from Backend API / Neon DB
+  // Clear any old local storage caches so they don't override database state
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [prodRes, setRes] = await Promise.all([
-          fetch('/api/products'),
-          fetch('/api/settings')
-        ]);
-
-        if (prodRes.ok) {
-          const prodsData = await prodRes.json();
-          if (Array.isArray(prodsData) && prodsData.length > 0) {
-            setProducts(prodsData);
-          }
-        }
-
-        if (setRes.ok) {
-          const setData = await setRes.json();
-          if (setData && setData.storeName) {
-            setSettings(setData);
-          }
-        }
-      } catch (err) {
-        console.warn('Backend server connection failed, using local cached data.', err);
-      }
-    };
-
-    fetchData();
+    localStorage.removeItem('my_prints_crafts_products_v1');
+    localStorage.removeItem('my_prints_crafts_settings_v1');
   }, []);
 
-  // Save local fallback cache
-  useEffect(() => {
-    localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(products));
-  }, [products]);
+  // Fetch data directly from Backend API / Neon DB
+  const fetchLatestData = async () => {
+    try {
+      const [prodRes, setRes] = await Promise.all([
+        fetch('/api/products'),
+        fetch('/api/settings')
+      ]);
 
+      if (prodRes.ok) {
+        const prodsData = await prodRes.json();
+        if (Array.isArray(prodsData)) {
+          setProducts(prodsData);
+        }
+      }
+
+      if (setRes.ok) {
+        const setData = await setRes.json();
+        if (setData && setData.storeName) {
+          setSettings(setData);
+        }
+      }
+    } catch (err) {
+      console.warn('Backend server connection failed:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Initial load & real-time polling (polls every 3 seconds so all devices stay updated)
   useEffect(() => {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  }, [settings]);
+    fetchLatestData();
+
+    const interval = setInterval(() => {
+      fetchLatestData();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(ADMIN_STORAGE_KEY, String(isAdmin));
   }, [isAdmin]);
+
 
   // Admin PIN Unlock Handler
   const handleAdminToggle = () => {
@@ -260,12 +260,13 @@ export function App() {
     }
   };
 
-  // Reset to Default Sample Products
+  // Clear all products and reset store settings
   const handleResetDefaults = async () => {
-    if (confirm("Reset products and settings back to original sample crafts?")) {
-      setProducts(INITIAL_PRODUCTS);
+    if (confirm("Clear all items and reset store settings?")) {
+      setProducts([]);
       setSettings(INITIAL_SETTINGS);
-      localStorage.clear();
+      localStorage.removeItem('my_prints_crafts_products_v1');
+      localStorage.removeItem('my_prints_crafts_settings_v1');
       try {
         await fetch('/api/reset', { method: 'POST' });
       } catch (err) {
@@ -273,6 +274,7 @@ export function App() {
       }
     }
   };
+
 
 
   // Category counts computation
@@ -462,9 +464,8 @@ export function App() {
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
                 placeholder="Enter PIN..."
-                className={`w-full text-center bg-[#FAF6F0] border ${
-                  pinError ? 'border-rose-400 bg-rose-50' : 'border-[#EFE6D8]'
-                } rounded-xl py-2.5 text-sm font-cute outline-none focus:border-[#D98A6C]`}
+                className={`w-full text-center bg-[#FAF6F0] border ${pinError ? 'border-rose-400 bg-rose-50' : 'border-[#EFE6D8]'
+                  } rounded-xl py-2.5 text-sm font-cute outline-none focus:border-[#D98A6C]`}
               />
 
               {pinError && (

@@ -18,7 +18,7 @@ const databaseUrl = process.env.DATABASE_URL?.trim();
 const sql = databaseUrl ? neon(databaseUrl) : null;
 
 // In-memory fallback store when DATABASE_URL is not set yet
-let memoryProducts: Product[] = [...INITIAL_PRODUCTS];
+let memoryProducts: Product[] = [];
 let memorySettings: StoreSettings = { ...INITIAL_SETTINGS };
 
 // Auto-initialize DB tables on startup if Neon DB URL is connected
@@ -94,19 +94,6 @@ async function initDb() {
       `;
     }
 
-    // Seed products if empty
-    const existingProducts = await sql`SELECT COUNT(*) as count FROM products`;
-    if (Number(existingProducts[0]?.count || 0) === 0) {
-      for (const p of INITIAL_PRODUCTS) {
-        await sql`
-          INSERT INTO products (id, title, category, price, description, image_url, status, tag, featured, created_at)
-          VALUES (
-            ${p.id}, ${p.title}, ${p.category}, ${p.price}, ${p.description}, 
-            ${p.imageUrl}, ${p.status}, ${p.tag || null}, ${p.featured || false}, ${p.createdAt}
-          );
-        `;
-      }
-    }
 
     console.log('✅ Neon PostgreSQL database initialized successfully!');
   } catch (err) {
@@ -282,20 +269,11 @@ app.put('/api/settings', async (req, res) => {
   }
 });
 
-// 6. RESET DEFAULTS
+// 6. CLEAR ALL PRODUCTS / RESET SETTINGS
 app.post('/api/reset', async (_req, res) => {
   try {
     if (sql) {
       await sql`DELETE FROM products`;
-      for (const p of INITIAL_PRODUCTS) {
-        await sql`
-          INSERT INTO products (id, title, category, price, description, image_url, status, tag, featured, created_at)
-          VALUES (
-            ${p.id}, ${p.title}, ${p.category}, ${p.price}, ${p.description}, 
-            ${p.imageUrl}, ${p.status}, ${p.tag || null}, ${p.featured || false}, ${p.createdAt}
-          );
-        `;
-      }
       await sql`
         UPDATE store_settings SET
           store_name = ${INITIAL_SETTINGS.storeName},
@@ -313,15 +291,16 @@ app.post('/api/reset', async (_req, res) => {
         WHERE id = 1;
       `;
     } else {
-      memoryProducts = [...INITIAL_PRODUCTS];
+      memoryProducts = [];
       memorySettings = { ...INITIAL_SETTINGS };
     }
     res.json({ success: true });
   } catch (err: any) {
-    console.error('Error resetting database:', err);
-    res.status(500).json({ error: 'Failed to reset database', details: err.message });
+    console.error('Error clearing database:', err);
+    res.status(500).json({ error: 'Failed to clear database', details: err.message });
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`🚀 M.Y Prints & Crafts Backend running on http://localhost:${PORT}`);
