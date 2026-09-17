@@ -9,14 +9,14 @@ export const INITIAL_SETTINGS: StoreSettings = {
   currency: "₱",
   contactMessenger: "https://m.me/vcre8tives",
   contactInstagram: "https://instagram.com/vcre8tives",
-  contactWhatsapp: "https://wa.me/639000000000",
+  contactFacebook: "https://facebook.com/vcre8tives",
+  contactTikTok: "https://tiktok.com/@vcre8tives",
   categories: ["Stickers", "Badge Pins", "Flowers", "Other Crafts"],
   socialLinks: [
     { id: '1', platform: 'Instagram', url: 'https://instagram.com/vcre8tives' },
     { id: '2', platform: 'Facebook', url: 'https://facebook.com/vcre8tives' },
     { id: '3', platform: 'TikTok', url: 'https://tiktok.com/@vcre8tives' },
-    { id: '4', platform: 'Shopee', url: 'https://shopee.ph/vcre8tives' },
-    { id: '5', platform: 'Messenger', url: 'https://m.me/vcre8tives' },
+    { id: '4', platform: 'Messenger', url: 'https://m.me/vcre8tives' },
   ]
 };
 

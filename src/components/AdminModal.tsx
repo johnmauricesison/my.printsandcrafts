@@ -46,6 +46,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [tagline, setTagline] = useState(settings.tagline);
   const [contactMessenger, setContactMessenger] = useState(settings.contactMessenger);
   const [contactInstagram, setContactInstagram] = useState(settings.contactInstagram);
+  const [contactFacebook, setContactFacebook] = useState(settings.contactFacebook || '');
+  const [contactTikTok, setContactTikTok] = useState(settings.contactTikTok || '');
   const [adminPin, setAdminPin] = useState(settings.adminPin);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -72,6 +74,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setTagline(settings.tagline);
     setContactMessenger(settings.contactMessenger);
     setContactInstagram(settings.contactInstagram);
+    setContactFacebook(settings.contactFacebook || '');
+    setContactTikTok(settings.contactTikTok || '');
     setAdminPin(settings.adminPin);
   }, [settings]);
 
@@ -147,6 +151,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       tagline,
       contactMessenger,
       contactInstagram,
+      contactFacebook,
+      contactTikTok,
       adminPin,
     });
     alert('Store Settings saved successfully! 💕');
@@ -439,6 +445,19 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-cute text-[#7D685C] uppercase tracking-wider mb-1">
+                    Facebook Page Link
+                  </label>
+                  <input
+                    type="text"
+                    value={contactFacebook}
+                    onChange={(e) => setContactFacebook(e.target.value)}
+                    placeholder="https://facebook.com/yourname"
+                    className="w-full bg-[#FAF6F0] border border-[#EFE6D8] rounded-xl px-3 py-2 text-xs font-sans-cute outline-none focus:border-[#D98A6C]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-cute text-[#7D685C] uppercase tracking-wider mb-1">
                     Instagram Profile Link
                   </label>
                   <input
@@ -446,6 +465,19 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     value={contactInstagram}
                     onChange={(e) => setContactInstagram(e.target.value)}
                     placeholder="https://instagram.com/yourname"
+                    className="w-full bg-[#FAF6F0] border border-[#EFE6D8] rounded-xl px-3 py-2 text-xs font-sans-cute outline-none focus:border-[#D98A6C]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-cute text-[#7D685C] uppercase tracking-wider mb-1">
+                    TikTok Profile Link
+                  </label>
+                  <input
+                    type="text"
+                    value={contactTikTok}
+                    onChange={(e) => setContactTikTok(e.target.value)}
+                    placeholder="https://tiktok.com/@yourname"
                     className="w-full bg-[#FAF6F0] border border-[#EFE6D8] rounded-xl px-3 py-2 text-xs font-sans-cute outline-none focus:border-[#D98A6C]"
                   />
                 </div>

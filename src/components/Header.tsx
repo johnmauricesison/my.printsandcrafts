@@ -1,7 +1,6 @@
 import React, { useRef } from 'react';
 import type { StoreSettings } from '../types';
 import { 
-  ShoppingBag, 
   MessageCircle, 
   Camera, 
   Sparkles, 
@@ -67,9 +66,6 @@ export const Header: React.FC<HeaderProps> = ({
             TT
           </span>
         );
-      case 'shopee':
-        return <ShoppingBag className="w-4 h-4 text-[#EE4D2D]" />;
-      case 'whatsapp':
       case 'messenger':
         return <MessageCircle className="w-4 h-4 text-[#0084FF]" />;
       default:

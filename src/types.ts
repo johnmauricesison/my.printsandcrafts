@@ -15,7 +15,7 @@ export interface Product {
 
 export interface SocialLink {
   id: string;
-  platform: 'Instagram' | 'Facebook' | 'TikTok' | 'Shopee' | 'Lazada' | 'WhatsApp' | 'Messenger' | 'Custom';
+  platform: 'Instagram' | 'Facebook' | 'TikTok' | 'Messenger' | 'Custom';
   url: string;
   iconName?: string;
 }
@@ -31,5 +31,6 @@ export interface StoreSettings {
   categories: string[];
   contactMessenger: string;
   contactInstagram: string;
-  contactWhatsapp: string;
+  contactFacebook: string;
+  contactTikTok: string;
 }
