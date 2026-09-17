@@ -453,7 +453,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
               <div>
                 <label className="block text-xs font-cute text-[#7D685C] uppercase tracking-wider mb-1">
-                  Owner Admin PIN Code (Default: 1234)
+                  Owner Admin PIN Code
                 </label>
                 <input
                   type="text"

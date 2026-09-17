@@ -5,7 +5,7 @@ export const INITIAL_SETTINGS: StoreSettings = {
   ownerName: "by Vcre8tives",
   tagline: "Handcrafted cute stickers, aesthetic badge pins, paper flowers & custom creative gifts made with love 💕✨",
   logoUrl: "", // Defaults to generated SVG avatar if empty
-  adminPin: "6945",
+  adminPin: "1234",
   currency: "₱",
   contactMessenger: "https://m.me/vcre8tives",
   contactInstagram: "https://instagram.com/vcre8tives",
