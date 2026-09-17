@@ -11,27 +11,27 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '20mb' })); // Allows base64 logo images up to 20MB
 
 // Database Client Setup
 const databaseUrl = process.env.DATABASE_URL?.trim();
 const sql = databaseUrl ? neon(databaseUrl) : null;
 
-// In-memory fallback store when DATABASE_URL is not set yet
+// In-memory fallback store when DATABASE_URL is not set
 let memoryProducts: Product[] = [];
 let memorySettings: StoreSettings = { ...INITIAL_SETTINGS };
 
-// Auto-initialize DB tables on startup if Neon DB URL is connected
+// Initialize Normalized DB Schema
 async function initDb() {
   if (!sql) {
-    console.log('⚡ No DATABASE_URL found in .env — using in-memory mode. Set DATABASE_URL to enable Neon PostgreSQL.');
+    console.log('⚡ No DATABASE_URL found in .env — using in-memory mode.');
     return;
   }
 
   try {
-    console.log('⏳ Connecting to Neon PostgreSQL & verifying schema...');
+    console.log('⏳ Connecting to Neon PostgreSQL & initializing database tables...');
 
-    // Create products table
+    // 1. PRODUCTS TABLE
     await sql`
       CREATE TABLE IF NOT EXISTS products (
         id VARCHAR(255) PRIMARY KEY,
@@ -47,7 +47,25 @@ async function initDb() {
       );
     `;
 
-    // Create store_settings table
+    // 2. CATEGORIES TABLE
+    await sql`
+      CREATE TABLE IF NOT EXISTS categories (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) UNIQUE NOT NULL
+      );
+    `;
+
+    // 3. SOCIAL LINKS TABLE
+    await sql`
+      CREATE TABLE IF NOT EXISTS social_links (
+        id VARCHAR(255) PRIMARY KEY,
+        platform VARCHAR(100) NOT NULL,
+        url TEXT NOT NULL,
+        icon_name VARCHAR(100)
+      );
+    `;
+
+    // 4. STORE SETTINGS TABLE
     await sql`
       CREATE TABLE IF NOT EXISTS store_settings (
         id INT PRIMARY KEY DEFAULT 1,
@@ -61,21 +79,38 @@ async function initDb() {
         contact_instagram VARCHAR(255),
         contact_facebook VARCHAR(255),
         contact_tiktok VARCHAR(255),
-        categories JSONB NOT NULL DEFAULT '["Stickers", "Badge Pins", "Flowers", "Other Crafts"]'::jsonb,
-        social_links JSONB NOT NULL DEFAULT '[]'::jsonb,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT single_row CHECK (id = 1)
       );
     `;
 
-    // Seed settings if empty
-    const existingSettings = await sql`SELECT id FROM store_settings WHERE id = 1`;
-    if (existingSettings.length === 0) {
+    // Seed default categories if empty
+    const catCount = await sql`SELECT COUNT(*) as count FROM categories`;
+    if (Number(catCount[0]?.count || 0) === 0) {
+      for (const cat of INITIAL_SETTINGS.categories) {
+        await sql`INSERT INTO categories (name) VALUES (${cat}) ON CONFLICT DO NOTHING`;
+      }
+    }
+
+    // Seed default social links if empty
+    const linkCount = await sql`SELECT COUNT(*) as count FROM social_links`;
+    if (Number(linkCount[0]?.count || 0) === 0) {
+      for (const link of INITIAL_SETTINGS.socialLinks) {
+        await sql`
+          INSERT INTO social_links (id, platform, url, icon_name)
+          VALUES (${link.id}, ${link.platform}, ${link.url}, ${link.iconName || null})
+          ON CONFLICT (id) DO NOTHING;
+        `;
+      }
+    }
+
+    // Seed default store settings if empty
+    const settingsCount = await sql`SELECT COUNT(*) as count FROM store_settings`;
+    if (Number(settingsCount[0]?.count || 0) === 0) {
       await sql`
         INSERT INTO store_settings (
           id, store_name, owner_name, tagline, logo_url, admin_pin, currency,
-          contact_messenger, contact_instagram, contact_facebook, contact_tiktok,
-          categories, social_links
+          contact_messenger, contact_instagram, contact_facebook, contact_tiktok
         ) VALUES (
           1,
           ${INITIAL_SETTINGS.storeName},
@@ -87,21 +122,18 @@ async function initDb() {
           ${INITIAL_SETTINGS.contactMessenger},
           ${INITIAL_SETTINGS.contactInstagram},
           ${INITIAL_SETTINGS.contactFacebook},
-          ${INITIAL_SETTINGS.contactTikTok},
-          ${JSON.stringify(INITIAL_SETTINGS.categories)}::jsonb,
-          ${JSON.stringify(INITIAL_SETTINGS.socialLinks)}::jsonb
-        );
+          ${INITIAL_SETTINGS.contactTikTok}
+        ) ON CONFLICT (id) DO NOTHING;
       `;
     }
 
-
-    console.log('✅ Neon PostgreSQL database initialized successfully!');
+    console.log('✅ Neon PostgreSQL database schema fully initialized!');
   } catch (err) {
-    console.error('❌ Failed to initialize Neon PostgreSQL database:', err);
+    console.error('❌ Failed to initialize Neon PostgreSQL database schema:', err);
   }
 }
 
-// Initialize DB schema
+// Run schema initialization
 initDb();
 
 // ----------------------------------------------------
@@ -119,7 +151,11 @@ app.get('/api/products', async (_req, res) => {
         FROM products 
         ORDER BY created_at DESC
       `;
-      return res.json(rows);
+      const formatted = rows.map((r: any) => ({
+        ...r,
+        createdAt: Number(r.createdAt) || Date.now(),
+      }));
+      return res.json(formatted);
     }
     return res.json(memoryProducts);
   } catch (err: any) {
@@ -140,9 +176,16 @@ app.post('/api/products', async (req, res) => {
       await sql`
         INSERT INTO products (id, title, category, price, description, image_url, status, tag, featured, created_at)
         VALUES (
-          ${product.id}, ${product.title}, ${product.category}, ${product.price}, 
-          ${product.description || ''}, ${product.imageUrl || ''}, ${product.status || 'Available'}, 
-          ${product.tag || null}, ${product.featured || false}, ${product.createdAt || Date.now()}
+          ${product.id}, 
+          ${product.title || 'Untitled Craft'}, 
+          ${product.category || 'Stickers'}, 
+          ${product.price || 0}, 
+          ${product.description || ''}, 
+          ${product.imageUrl || ''}, 
+          ${product.status || 'Available'}, 
+          ${product.tag || null}, 
+          ${Boolean(product.featured)}, 
+          ${product.createdAt || Date.now()}
         )
         ON CONFLICT (id) DO UPDATE SET
           title = EXCLUDED.title,
@@ -186,30 +229,34 @@ app.delete('/api/products/:id', async (req, res) => {
   }
 });
 
-// 4. GET STORE SETTINGS
+// 4. GET STORE SETTINGS (Combined from tables)
 app.get('/api/settings', async (_req, res) => {
   try {
     if (sql) {
-      const rows = await sql`
-        SELECT 
-          store_name as "storeName",
-          owner_name as "ownerName",
-          tagline,
-          logo_url as "logoUrl",
-          admin_pin as "adminPin",
-          currency,
-          contact_messenger as "contactMessenger",
-          contact_instagram as "contactInstagram",
-          contact_facebook as "contactFacebook",
-          contact_tiktok as "contactTikTok",
-          categories,
-          social_links as "socialLinks"
-        FROM store_settings 
-        WHERE id = 1
-      `;
-      if (rows.length > 0) {
-        return res.json(rows[0]);
-      }
+      const [settingsRows, categoryRows, socialRows] = await Promise.all([
+        sql`SELECT * FROM store_settings WHERE id = 1`,
+        sql`SELECT name FROM categories ORDER BY id ASC`,
+        sql`SELECT id, platform, url, icon_name as "iconName" FROM social_links`
+      ]);
+
+      const baseSettings = settingsRows[0] || {};
+      const categories = categoryRows.map((c: any) => c.name);
+      const socialLinks = socialRows;
+
+      return res.json({
+        storeName: baseSettings.store_name || INITIAL_SETTINGS.storeName,
+        ownerName: baseSettings.owner_name || INITIAL_SETTINGS.ownerName,
+        tagline: baseSettings.tagline || INITIAL_SETTINGS.tagline,
+        logoUrl: baseSettings.logo_url || '',
+        adminPin: baseSettings.admin_pin || INITIAL_SETTINGS.adminPin,
+        currency: baseSettings.currency || INITIAL_SETTINGS.currency,
+        contactMessenger: baseSettings.contact_messenger || '',
+        contactInstagram: baseSettings.contact_instagram || '',
+        contactFacebook: baseSettings.contact_facebook || '',
+        contactTikTok: baseSettings.contact_tiktok || '',
+        categories: categories.length > 0 ? categories : INITIAL_SETTINGS.categories,
+        socialLinks: socialLinks.length > 0 ? socialLinks : INITIAL_SETTINGS.socialLinks,
+      });
     }
     return res.json(memorySettings);
   } catch (err: any) {
@@ -223,25 +270,23 @@ app.put('/api/settings', async (req, res) => {
   try {
     const settings: StoreSettings = req.body;
     if (sql) {
+      // Update store_settings
       await sql`
         INSERT INTO store_settings (
           id, store_name, owner_name, tagline, logo_url, admin_pin, currency,
-          contact_messenger, contact_instagram, contact_facebook, contact_tiktok,
-          categories, social_links
+          contact_messenger, contact_instagram, contact_facebook, contact_tiktok
         ) VALUES (
           1,
-          ${settings.storeName},
-          ${settings.ownerName},
-          ${settings.tagline},
+          ${settings.storeName || 'M.Y Prints & Crafts'},
+          ${settings.ownerName || ''},
+          ${settings.tagline || ''},
           ${settings.logoUrl || ''},
-          ${settings.adminPin},
-          ${settings.currency},
-          ${settings.contactMessenger},
-          ${settings.contactInstagram},
-          ${settings.contactFacebook},
-          ${settings.contactTikTok},
-          ${JSON.stringify(settings.categories)}::jsonb,
-          ${JSON.stringify(settings.socialLinks)}::jsonb
+          ${settings.adminPin || '1234'},
+          ${settings.currency || '₱'},
+          ${settings.contactMessenger || ''},
+          ${settings.contactInstagram || ''},
+          ${settings.contactFacebook || ''},
+          ${settings.contactTikTok || ''}
         )
         ON CONFLICT (id) DO UPDATE SET
           store_name = EXCLUDED.store_name,
@@ -254,10 +299,36 @@ app.put('/api/settings', async (req, res) => {
           contact_instagram = EXCLUDED.contact_instagram,
           contact_facebook = EXCLUDED.contact_facebook,
           contact_tiktok = EXCLUDED.contact_tiktok,
-          categories = EXCLUDED.categories,
-          social_links = EXCLUDED.social_links,
           updated_at = CURRENT_TIMESTAMP;
       `;
+
+      // Sync categories table
+      if (Array.isArray(settings.categories)) {
+        for (const cat of settings.categories) {
+          if (cat) {
+            await sql`
+              INSERT INTO categories (name) VALUES (${cat})
+              ON CONFLICT (name) DO NOTHING;
+            `;
+          }
+        }
+      }
+
+      // Sync social_links table
+      if (Array.isArray(settings.socialLinks)) {
+        for (const link of settings.socialLinks) {
+          if (link && link.id) {
+            await sql`
+              INSERT INTO social_links (id, platform, url, icon_name)
+              VALUES (${link.id}, ${link.platform}, ${link.url}, ${link.iconName || null})
+              ON CONFLICT (id) DO UPDATE SET
+                platform = EXCLUDED.platform,
+                url = EXCLUDED.url,
+                icon_name = EXCLUDED.icon_name;
+            `;
+          }
+        }
+      }
     } else {
       memorySettings = { ...settings };
     }
@@ -269,7 +340,37 @@ app.put('/api/settings', async (req, res) => {
   }
 });
 
-// 6. CLEAR ALL PRODUCTS / RESET SETTINGS
+// 6. GET/ADD CATEGORIES API
+app.get('/api/categories', async (_req, res) => {
+  try {
+    if (sql) {
+      const rows = await sql`SELECT name FROM categories ORDER BY id ASC`;
+      return res.json(rows.map((r: any) => r.name));
+    }
+    return res.json(memorySettings.categories);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+});
+
+app.post('/api/categories', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Category name required' });
+    if (sql) {
+      await sql`INSERT INTO categories (name) VALUES (${name}) ON CONFLICT (name) DO NOTHING`;
+    } else {
+      if (!memorySettings.categories.includes(name)) {
+        memorySettings.categories.push(name);
+      }
+    }
+    res.json({ success: true, name });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to add category' });
+  }
+});
+
+// 7. CLEAR ALL PRODUCTS / RESET SETTINGS
 app.post('/api/reset', async (_req, res) => {
   try {
     if (sql) {
@@ -279,15 +380,13 @@ app.post('/api/reset', async (_req, res) => {
           store_name = ${INITIAL_SETTINGS.storeName},
           owner_name = ${INITIAL_SETTINGS.ownerName},
           tagline = ${INITIAL_SETTINGS.tagline},
-          logo_url = ${INITIAL_SETTINGS.logoUrl || ''},
+          logo_url = '',
           admin_pin = ${INITIAL_SETTINGS.adminPin},
           currency = ${INITIAL_SETTINGS.currency},
           contact_messenger = ${INITIAL_SETTINGS.contactMessenger},
           contact_instagram = ${INITIAL_SETTINGS.contactInstagram},
           contact_facebook = ${INITIAL_SETTINGS.contactFacebook},
-          contact_tiktok = ${INITIAL_SETTINGS.contactTikTok},
-          categories = ${JSON.stringify(INITIAL_SETTINGS.categories)}::jsonb,
-          social_links = ${JSON.stringify(INITIAL_SETTINGS.socialLinks)}::jsonb
+          contact_tiktok = ${INITIAL_SETTINGS.contactTikTok}
         WHERE id = 1;
       `;
     } else {
@@ -300,7 +399,6 @@ app.post('/api/reset', async (_req, res) => {
     res.status(500).json({ error: 'Failed to clear database', details: err.message });
   }
 });
-
 
 app.listen(PORT, () => {
   console.log(`🚀 M.Y Prints & Crafts Backend running on http://localhost:${PORT}`);
