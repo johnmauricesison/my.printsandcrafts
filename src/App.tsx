@@ -44,7 +44,37 @@ export function App() {
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Save changes to localStorage
+  // Fetch initial data from Backend API / Neon DB
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [prodRes, setRes] = await Promise.all([
+          fetch('/api/products'),
+          fetch('/api/settings')
+        ]);
+
+        if (prodRes.ok) {
+          const prodsData = await prodRes.json();
+          if (Array.isArray(prodsData) && prodsData.length > 0) {
+            setProducts(prodsData);
+          }
+        }
+
+        if (setRes.ok) {
+          const setData = await setRes.json();
+          if (setData && setData.storeName) {
+            setSettings(setData);
+          }
+        }
+      } catch (err) {
+        console.warn('Backend server connection failed, using local cached data.', err);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Save local fallback cache
   useEffect(() => {
     localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(products));
   }, [products]);
@@ -86,18 +116,37 @@ export function App() {
     }
   };
 
+  // Helper to sync updated settings with API
+  const saveSettingsToApi = async (updatedSettings: StoreSettings) => {
+    setSettings(updatedSettings);
+    try {
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedSettings),
+      });
+    } catch (err) {
+      console.error('Failed to sync settings with server:', err);
+    }
+  };
+
   // Product CRUD Functions
-  const handleSaveProduct = (productData: Partial<Product>) => {
+  const handleSaveProduct = async (productData: Partial<Product>) => {
+    let updatedProduct: Product;
+
     if (productData.id) {
       // Edit existing product
+      updatedProduct = {
+        ...(products.find((p) => p.id === productData.id) || {}),
+        ...productData,
+      } as Product;
+
       setProducts((prev) =>
-        prev.map((p) =>
-          p.id === productData.id ? ({ ...p, ...productData } as Product) : p
-        )
+        prev.map((p) => (p.id === productData.id ? updatedProduct : p))
       );
     } else {
       // Create new product
-      const newProduct: Product = {
+      updatedProduct = {
         id: `prod-${Date.now()}`,
         title: productData.title || 'Untitled Craft',
         category: productData.category || 'Stickers',
@@ -108,7 +157,7 @@ export function App() {
         tag: productData.tag,
         createdAt: Date.now(),
       };
-      setProducts((prev) => [newProduct, ...prev]);
+      setProducts((prev) => [updatedProduct, ...prev]);
 
       confetti({
         particleCount: 60,
@@ -116,30 +165,58 @@ export function App() {
         origin: { y: 0.7 }
       });
     }
+
     setProductToEdit(null);
+
+    // Save to API / Neon DB
+    try {
+      await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedProduct),
+      });
+    } catch (err) {
+      console.error('Failed to save product to backend API:', err);
+    }
   };
 
-  const confirmDeleteProduct = () => {
+  const confirmDeleteProduct = async () => {
     if (productToDelete) {
-      setProducts((prev) => prev.filter((p) => p.id !== productToDelete.id));
-      if (selectedProduct?.id === productToDelete.id) {
+      const targetId = productToDelete.id;
+      setProducts((prev) => prev.filter((p) => p.id !== targetId));
+      if (selectedProduct?.id === targetId) {
         setSelectedProduct(null);
       }
       setProductToDelete(null);
+
+      // Delete from API / Neon DB
+      try {
+        await fetch(`/api/products/${targetId}`, {
+          method: 'DELETE',
+        });
+      } catch (err) {
+        console.error('Failed to delete product from backend API:', err);
+      }
     }
   };
 
   const handleUpdateLogo = (newLogoBase64: string) => {
-    setSettings((prev) => ({ ...prev, logoUrl: newLogoBase64 }));
+    const updated = { ...settings, logoUrl: newLogoBase64 };
+    saveSettingsToApi(updated);
   };
 
   const handleAddCategory = (newCat: string) => {
     if (!settings.categories.includes(newCat)) {
-      setSettings((prev) => ({
-        ...prev,
-        categories: [...prev.categories, newCat],
-      }));
+      const updated = {
+        ...settings,
+        categories: [...settings.categories, newCat],
+      };
+      saveSettingsToApi(updated);
     }
+  };
+
+  const handleSaveSettings = (newSettings: StoreSettings) => {
+    saveSettingsToApi(newSettings);
   };
 
   // Export Data JSON Backup
@@ -158,16 +235,23 @@ export function App() {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         try {
           const imported = JSON.parse(event.target?.result as string);
           if (imported.products && Array.isArray(imported.products)) {
             setProducts(imported.products);
+            for (const p of imported.products) {
+              await fetch('/api/products', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(p),
+              });
+            }
           }
           if (imported.settings) {
-            setSettings(imported.settings);
+            saveSettingsToApi(imported.settings);
           }
-          alert('Data imported successfully! 💕');
+          alert('Data imported successfully and synced to server! 💕');
         } catch (err) {
           alert('Invalid backup JSON file!');
         }
@@ -177,13 +261,19 @@ export function App() {
   };
 
   // Reset to Default Sample Products
-  const handleResetDefaults = () => {
+  const handleResetDefaults = async () => {
     if (confirm("Reset products and settings back to original sample crafts?")) {
       setProducts(INITIAL_PRODUCTS);
       setSettings(INITIAL_SETTINGS);
       localStorage.clear();
+      try {
+        await fetch('/api/reset', { method: 'POST' });
+      } catch (err) {
+        console.error('Failed to reset backend API:', err);
+      }
     }
   };
+
 
   // Category counts computation
   const categoryCounts = React.useMemo(() => {
@@ -303,7 +393,8 @@ export function App() {
         categories={settings.categories}
         settings={settings}
         onSaveProduct={handleSaveProduct}
-        onSaveSettings={setSettings}
+        onSaveSettings={handleSaveSettings}
+
         onAddCategory={handleAddCategory}
         onExportData={handleExportData}
         onImportData={handleImportData}
